@@ -33,3 +33,6 @@ IMAGES/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Ad-hoc generated samples
+batch_sample.png
