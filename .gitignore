@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+glaucoma_env/
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code / IDE
+.vscode/
+.idea/
+
+# Training artifacts and generated outputs
+outputs/
+
+# Local datasets and raw images
+dataset/
+IMAGES/
+
+# Model binaries and wheels
+*.pth
+*.pt
+*.whl
+
+# OS files
+.DS_Store
+Thumbs.db
