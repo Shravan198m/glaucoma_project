@@ -7,6 +7,8 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
+from config import get_config
+
 
 def load_image(image_path: str) -> np.ndarray:
     """Load a retinal fundus image from disk in BGR format (OpenCV default)."""
@@ -39,7 +41,11 @@ def normalize_image(image: np.ndarray) -> np.ndarray:
 
 def clahe_enhancement(image_gray: np.ndarray) -> np.ndarray:
     """Apply CLAHE to improve local contrast under uneven fundus illumination."""
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    config = get_config()
+    clahe = cv2.createCLAHE(
+        clipLimit=config.preprocessing.clahe_clip_limit,
+        tileGridSize=config.preprocessing.clahe_tile_size,
+    )
     return clahe.apply(image_gray)
 
 

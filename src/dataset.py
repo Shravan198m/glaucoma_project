@@ -26,9 +26,13 @@ CLASS_NAMES = ['normal', 'glaucoma']
 # - Augmentation artificially increases variety
 # - Prevents overfitting (model memorizing exact images)
 # - Each epoch the model sees SLIGHTLY different versions of images
+# - Enhanced augmentation for better generalization
 
 train_transforms = transforms.Compose([
-    # Resize to ResNet-50 input size
+    # Random resized crop for scale and aspect ratio variation
+    transforms.RandomResizedCrop(224, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
+
+    # Resize to ResNet-50 input size (as fallback)
     transforms.Resize((224, 224)),
 
     # Random horizontal flip (50% chance)
@@ -39,18 +43,25 @@ train_transforms = transforms.Compose([
     # WHY: Valid augmentation for fundus images
     transforms.RandomVerticalFlip(p=0.5),
 
-    # Random rotation up to 30 degrees
+    # Random rotation up to 45 degrees (increased from 30)
     # WHY: Camera angle varies between patients
-    transforms.RandomRotation(degrees=30),
+    transforms.RandomRotation(degrees=45),
 
-    # Random brightness and contrast changes
+    # Enhanced color jitter for lighting/camera variations
     # WHY: Different cameras/lighting conditions
     transforms.ColorJitter(
-        brightness=0.2,
-        contrast=0.2,
-        saturation=0.1,
-        hue=0.05
+        brightness=0.3,
+        contrast=0.3,
+        saturation=0.2,
+        hue=0.1
     ),
+
+
+    # Random grayscale conversion (small chance) - helps with illumination invariance
+    transforms.RandomGrayscale(p=0.1),
+
+    # Gaussian blur to simulate slight defocus or motion blur
+    transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
 
     # Convert PIL image to tensor (values become 0-1)
     transforms.ToTensor(),

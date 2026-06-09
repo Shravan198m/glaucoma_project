@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glaucoma-detection"
+version = "0.1.0"
+description = "Automated glaucoma detection from fundus images"
+authors = [ { name = "GLAUCOMA Team" } ]
+readme = "README.md"
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,229 +1,354 @@
-"""Evaluation and inference utilities for the glaucoma classifier."""
+import sys
+import json
+stdout_reconfigure = getattr(sys.stdout, "reconfigure", None)
+if callable(stdout_reconfigure):
+    stdout_reconfigure(encoding="utf-8", errors="replace")
+stderr_reconfigure = getattr(sys.stderr, "reconfigure", None)
+if callable(stderr_reconfigure):
+    stderr_reconfigure(encoding="utf-8", errors="replace")
 
-from __future__ import annotations
-
+import torch
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Headless rendering
+import matplotlib.pyplot as plt
+from sklearn.metrics import (confusion_matrix, classification_report,
+                             roc_curve, auc, precision_score,
+                             recall_score, f1_score, accuracy_score,
+                             precision_recall_curve)
+from model import create_resnet50_model
+from dataset import create_dataloaders, CLASS_NAMES
 import os
 from pathlib import Path
-from typing import Dict, Iterable, Tuple
-
-import matplotlib.pyplot as plt
-import numpy as np
-import torch
-from PIL import Image
-from torchvision import transforms
-
-from dataset import create_dataloaders
-from model import create_resnet50_model
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MODEL_PATH = PROJECT_ROOT / "outputs" / "models" / "best_model.pth"
+def predict_from_probs(probs, threshold=0.5):
+    """Convert probabilities to binary labels using a decision threshold."""
+    return (np.asarray(probs) >= threshold).astype(int)
 
 
-def build_inference_transform() -> transforms.Compose:
-    """Match the validation/test preprocessing used during training."""
-    return transforms.Compose(
-        [
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225],
-            ),
-        ]
-    )
+def find_best_threshold(labels, probs, beta=2.0, min_precision=0.0):
+    """
+    Find a threshold that prioritizes recall.
+
+    Uses the F-beta score with beta > 1 to weight recall more strongly than
+    precision. beta=2 is a good default for medical screening tasks.
+    """
+    labels = np.asarray(labels).astype(int)
+    probs = np.asarray(probs).astype(float)
+
+    if labels.size == 0:
+        return 0.5, 0.0, 0.0, 0.0
+
+    precision, recall, thresholds = precision_recall_curve(labels, probs)
+    thresholds = np.append(thresholds, 1.0)
+
+    best_threshold = 0.5
+    best_score = -1.0
+    best_precision = 0.0
+    best_recall = 0.0
+
+    for idx, threshold in enumerate(thresholds):
+        current_precision = precision[min(idx, len(precision) - 1)]
+        current_recall = recall[min(idx, len(recall) - 1)]
+
+        if current_precision < min_precision:
+            continue
+
+        beta_sq = beta * beta
+        if current_precision + current_recall == 0:
+            score = 0.0
+        else:
+            score = (1 + beta_sq) * current_precision * current_recall / (
+                beta_sq * current_precision + current_recall
+            )
+
+        if score > best_score or (score == best_score and current_recall > best_recall):
+            best_score = score
+            best_threshold = float(threshold)
+            best_precision = float(current_precision)
+            best_recall = float(current_recall)
+
+    return best_threshold, best_score, best_precision, best_recall
 
 
-def load_trained_model(model_path: str | os.PathLike[str] | None = None) -> torch.nn.Module:
-    """Load the trained ResNet-50 checkpoint for inference."""
-    checkpoint_path = Path(model_path) if model_path is not None else MODEL_PATH
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Trained model not found: {checkpoint_path}")
-
-    model = create_resnet50_model()
-    state_dict = torch.load(checkpoint_path, map_location="cpu")
-    model.load_state_dict(state_dict)
+def evaluate_model(model, test_loader, device=None, threshold=0.5):
+    """
+    Run model on test set and collect all predictions.
+    Returns true labels, predicted labels, and raw probabilities.
+    """
+    if device is None:
+        device = torch.device('cpu')
+    elif isinstance(device, str):
+        device = torch.device(device)
+    
     model.eval()
-    return model
 
+    all_labels      = []
+    all_predictions = []
+    all_probs       = []
 
-def predict_single_image(
-    image_path: str | os.PathLike[str],
-    model_path: str | os.PathLike[str] | None = None,
-) -> Dict[str, object]:
-    """Predict glaucoma probability for a single fundus image."""
-    model = load_trained_model(model_path)
-    transform = build_inference_transform()
-
-    image = Image.open(image_path).convert("RGB")
-    input_tensor = transform(image).unsqueeze(0)
-
-    with torch.no_grad():
-        probability = float(model(input_tensor).item())
-
-    label = "Glaucoma" if probability >= 0.5 else "Normal"
-    confidence = probability if label == "Glaucoma" else 1.0 - probability
-
-    return {
-        "label": label,
-        "probability": probability,
-        "confidence": confidence,
-        "confidence_percent": round(confidence * 100.0, 2),
-    }
-
-
-def _confusion_counts(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[int, int, int, int]:
-    """Return TN, FP, FN, TP for binary labels."""
-    tn = int(np.sum((y_true == 0) & (y_pred == 0)))
-    fp = int(np.sum((y_true == 0) & (y_pred == 1)))
-    fn = int(np.sum((y_true == 1) & (y_pred == 0)))
-    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
-    return tn, fp, fn, tp
-
-
-def _classification_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
-    tn, fp, fn, tp = _confusion_counts(y_true, y_pred)
-    total = tn + fp + fn + tp
-
-    accuracy = (tn + tp) / total if total else 0.0
-    precision = tp / (tp + fp) if (tp + fp) else 0.0
-    recall = tp / (tp + fn) if (tp + fn) else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
-
-    return {
-        "tn": float(tn),
-        "fp": float(fp),
-        "fn": float(fn),
-        "tp": float(tp),
-        "accuracy": accuracy,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1,
-    }
-
-
-def _roc_curve(y_true: np.ndarray, y_prob: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
-    """Compute a simple ROC curve and AUC without third-party dependencies."""
-    thresholds = np.r_[np.inf, np.sort(np.unique(y_prob))[::-1], -np.inf]
-    fpr_values = []
-    tpr_values = []
-
-    for threshold in thresholds:
-        y_pred = (y_prob >= threshold).astype(int)
-        tn, fp, fn, tp = _confusion_counts(y_true, y_pred)
-        tpr = tp / (tp + fn) if (tp + fn) else 0.0
-        fpr = fp / (fp + tn) if (fp + tn) else 0.0
-        fpr_values.append(fpr)
-        tpr_values.append(tpr)
-
-    fpr_array = np.array(fpr_values, dtype=float)
-    tpr_array = np.array(tpr_values, dtype=float)
-    auc = float(np.trapz(tpr_array, fpr_array))
-    return fpr_array, tpr_array, auc
-
-
-def evaluate_model(
-    model_path: str | os.PathLike[str] | None = None,
-    dataset_root: str | os.PathLike[str] | None = None,
-    batch_size: int = 8,
-) -> Dict[str, object]:
-    """Evaluate the saved model on the held-out test set and save plots."""
-    checkpoint_path = Path(model_path) if model_path is not None else MODEL_PATH
-    root = Path(dataset_root) if dataset_root is not None else PROJECT_ROOT / "dataset"
-
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Trained model not found: {checkpoint_path}")
-
-    _, _, test_loader, _ = create_dataloaders(str(root), batch_size=batch_size)
-    model = load_trained_model(checkpoint_path)
-
-    y_true: list[int] = []
-    y_prob: list[float] = []
+    print("Running evaluation on test set...")
 
     with torch.no_grad():
         for images, labels in test_loader:
-            outputs = model(images)
-            y_prob.extend(outputs.squeeze(1).tolist())
-            y_true.extend(labels.tolist())
+            images = images.to(device)
+            outputs = model(images)           # Raw probabilities (0-1)
+            probs   = outputs.squeeze(1).cpu().numpy()
+            preds   = predict_from_probs(probs, threshold=threshold)
+            lbls    = labels.numpy().astype(int)
 
-    y_true_array = np.array(y_true, dtype=int)
-    y_prob_array = np.array(y_prob, dtype=float)
-    y_pred_array = (y_prob_array >= 0.5).astype(int)
+            all_probs.extend(probs.tolist())
+            all_predictions.extend(preds.tolist())
+            all_labels.extend(lbls.tolist())
 
-    metrics = _classification_metrics(y_true_array, y_pred_array)
-    fpr, tpr, auc = _roc_curve(y_true_array, y_prob_array)
-    metrics["auc"] = auc
-
-    plots_root = PROJECT_ROOT / "outputs" / "plots"
-    plots_root.mkdir(parents=True, exist_ok=True)
-
-    confusion_path = plots_root / "confusion_matrix.png"
-    roc_path = plots_root / "roc_curve.png"
-
-    _save_confusion_matrix(metrics, confusion_path)
-    _save_roc_curve(fpr, tpr, auc, roc_path)
-
-    return {
-        "metrics": metrics,
-        "confusion_matrix_path": str(confusion_path),
-        "roc_curve_path": str(roc_path),
-    }
+        return (np.array(all_labels),
+            np.array(all_predictions),
+            np.array(all_probs))
 
 
-def _save_confusion_matrix(metrics: Dict[str, float], save_path: Path) -> None:
-    """Save a confusion matrix heatmap."""
-    matrix = np.array(
-        [[metrics["tn"], metrics["fp"]], [metrics["fn"], metrics["tp"]]],
-        dtype=float,
+def print_metrics(labels, predictions, probs):
+    """Print all classification metrics clearly."""
+
+    acc  = accuracy_score(labels, predictions)  * 100
+    prec = precision_score(labels, predictions) * 100
+    rec  = recall_score(labels, predictions)    * 100
+    f1   = f1_score(labels, predictions)        * 100
+
+    print("\n" + "="*50)
+    print("EVALUATION RESULTS")
+    print("="*50)
+    print(f"  Accuracy:  {acc:.2f}%")
+    print(f"  Precision: {prec:.2f}%")
+    print(f"  Recall:    {rec:.2f}%")
+    print(f"  F1-Score:  {f1:.2f}%")
+    print("="*50)
+
+    # WHY EACH METRIC MATTERS IN MEDICAL IMAGING:
+    print("\nMETRIC INTERPRETATIONS:")
+    print(f"  Accuracy  ({acc:.1f}%): Overall correct predictions")
+    print(f"  Precision ({prec:.1f}%): Of predicted Glaucoma cases, "
+          f"how many are truly Glaucoma")
+    print(f"  Recall    ({rec:.1f}%): Of all actual Glaucoma cases, "
+          f"how many did we catch")
+    print(f"  → Recall is MOST IMPORTANT in medical screening!")
+    print(f"     Missing a Glaucoma case (low recall) is worse than")
+    print(f"     a false alarm (low precision)")
+    print(f"  F1-Score  ({f1:.1f}%): Balance between Precision and Recall")
+
+    print("\nDETAILED REPORT:")
+    print(classification_report(labels, predictions,
+                                target_names=CLASS_NAMES))
+
+    return acc, prec, rec, f1
+
+
+def plot_confusion_matrix(labels, predictions):
+    """
+    Plot confusion matrix.
+
+    READING THE CONFUSION MATRIX:
+    ┌─────────────────────────────────┐
+    │           Predicted             │
+    │         Normal | Glaucoma       │
+    │ Actual ─────────────────────    │
+    │ Normal │  TN   │  FP  │         │
+    │ Glaucoma│  FN  │  TP  │         │
+    └─────────────────────────────────┘
+
+    TN = True Negative  (correctly said Normal)   ✅
+    TP = True Positive  (correctly said Glaucoma) ✅
+    FP = False Positive (said Glaucoma, was Normal)  ← False alarm
+    FN = False Negative (said Normal, was Glaucoma)  ← DANGEROUS! missed case
+    """
+    cm = confusion_matrix(labels, predictions)
+
+    plt.figure(figsize=(8, 6))
+    plt.imshow(cm, interpolation='nearest', cmap='Blues')
+    plt.colorbar()
+
+    tick_marks = np.arange(len(CLASS_NAMES))
+    plt.xticks(tick_marks, CLASS_NAMES)
+    plt.yticks(tick_marks, CLASS_NAMES)
+    plt.title('Confusion Matrix', fontsize=14, fontweight='bold', pad=15)
+    plt.ylabel('Actual Label', fontsize=12)
+    plt.xlabel('Predicted Label', fontsize=12)
+
+    threshold = cm.max() / 2.0 if cm.size else 0
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            plt.text(
+                j,
+                i,
+                format(cm[i, j], 'd'),
+                ha='center',
+                va='center',
+                color='white' if cm[i, j] > threshold else 'black',
+                fontsize=16,
+                fontweight='bold',
+            )
+
+    # Add TN/FP/FN/TP labels
+    tn, fp, fn, tp = cm.ravel()
+    plt.text(0.25, 0.85, f'TN={tn}', ha='center',
+             transform=plt.gca().transAxes, color='green', fontsize=11)
+    plt.text(0.75, 0.85, f'FP={fp}', ha='center',
+             transform=plt.gca().transAxes, color='orange', fontsize=11)
+    plt.text(0.25, 0.15, f'FN={fn}', ha='center',
+             transform=plt.gca().transAxes, color='red', fontsize=11)
+    plt.text(0.75, 0.15, f'TP={tp}', ha='center',
+             transform=plt.gca().transAxes, color='green', fontsize=11)
+
+    plt.tight_layout()
+    os.makedirs('outputs/plots', exist_ok=True)
+    plt.savefig('outputs/plots/confusion_matrix.png',
+                dpi=150, bbox_inches='tight')
+    plt.close()
+    print("📊 Confusion matrix saved!")
+
+
+def plot_roc_curve(labels, probs):
+    """
+    Plot ROC (Receiver Operating Characteristic) curve.
+
+    WHY ROC CURVE IS CRITICAL FOR MEDICAL PROJECTS:
+    - Shows trade-off between catching true positives vs false alarms
+    - AUC (Area Under Curve): closer to 1.0 = better
+    - AUC = 0.5: random guessing (useless)
+    - AUC > 0.9: excellent for medical screening
+    - Lets clinicians choose threshold based on their risk tolerance
+    """
+    fpr, tpr, thresholds = roc_curve(labels, probs)
+    roc_auc = auc(fpr, tpr)
+
+    # Find optimal threshold (Youden's Index: max(TPR - FPR))
+    optimal_idx       = np.argmax(tpr - fpr)
+    optimal_threshold = thresholds[optimal_idx]
+    optimal_fpr       = fpr[optimal_idx]
+    optimal_tpr       = tpr[optimal_idx]
+
+    plt.figure(figsize=(8, 7))
+    plt.plot(fpr, tpr, 'b-', linewidth=2.5,
+             label=f'ROC Curve (AUC = {roc_auc:.4f})')
+    plt.plot([0, 1], [0, 1], 'r--',
+             linewidth=1.5, label='Random Classifier (AUC=0.5)')
+
+    # Mark optimal threshold point
+    plt.scatter(optimal_fpr, optimal_tpr, s=150,
+                color='green', zorder=5,
+                label=f'Optimal Threshold = {optimal_threshold:.3f}\n'
+                      f'(TPR={optimal_tpr:.3f}, FPR={optimal_fpr:.3f})')
+
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate (1 - Specificity)', fontsize=12)
+    plt.ylabel('True Positive Rate (Sensitivity / Recall)', fontsize=12)
+    plt.title(f'ROC Curve — Glaucoma Detection\nAUC = {roc_auc:.4f}',
+              fontsize=14, fontweight='bold')
+    plt.legend(loc='lower right', fontsize=10)
+    plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig('outputs/plots/roc_curve.png',
+                dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"📊 ROC Curve saved! AUC = {roc_auc:.4f}")
+    print(f"   Optimal threshold: {optimal_threshold:.4f}")
+
+    return roc_auc, optimal_threshold
+
+
+def full_evaluation(model_path='outputs/models/best_model.pth', dataset_root='dataset', batch_size=8, beta=2.0, min_precision=0.0, summary_filename='tuned_evaluation_summary.json'):
+    """Run complete evaluation pipeline with recall-oriented threshold tuning."""
+
+    device = torch.device('cpu')
+
+    # Load best model
+    print(f"Loading model from {model_path}...")
+    model = create_resnet50_model()
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model = model.to(device)
+    print("✅ Model loaded!")
+
+    # Load data
+    train_loader, val_loader, test_loader, class_weights = create_dataloaders(dataset_root, batch_size=batch_size)
+
+    # Tune threshold on validation set to favor recall
+    print("Tuning decision threshold on validation set...")
+    val_labels, _, val_probs = evaluate_model(model, val_loader, device=device, threshold=0.5)
+    tuned_threshold, fbeta_score, tuned_precision, tuned_recall = find_best_threshold(
+        val_labels,
+        val_probs,
+        beta=beta,
+        min_precision=min_precision,
+    )
+    print(
+        f"✅ Tuned threshold: {tuned_threshold:.4f} | "
+        f"F{beta:.1f}: {fbeta_score:.4f} | Precision: {tuned_precision:.4f} | Recall: {tuned_recall:.4f}"
     )
 
-    fig, ax = plt.subplots(figsize=(5, 4))
-    image = ax.imshow(matrix, cmap="Blues")
-    ax.set_title("Confusion Matrix")
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("Actual")
-    ax.set_xticks([0, 1], labels=["Normal", "Glaucoma"])
-    ax.set_yticks([0, 1], labels=["Normal", "Glaucoma"])
+    # Get predictions
+    labels, predictions, probs = evaluate_model(model, test_loader, device=device, threshold=tuned_threshold)
 
-    for row in range(2):
-        for col in range(2):
-            ax.text(col, row, int(matrix[row, col]), ha="center", va="center", color="black")
+    # Print all metrics
+    acc, prec, rec, f1 = print_metrics(labels, predictions, probs)
 
-    fig.colorbar(image, ax=ax)
-    fig.tight_layout()
-    fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    # Plot confusion matrix
+    plot_confusion_matrix(labels, predictions)
 
+    # Plot ROC curve
+    roc_auc, opt_threshold = plot_roc_curve(labels, probs)
 
-def _save_roc_curve(fpr: np.ndarray, tpr: np.ndarray, auc: float, save_path: Path) -> None:
-    """Save the ROC curve plot."""
-    fig, ax = plt.subplots(figsize=(5, 4))
-    ax.plot(fpr, tpr, color="darkorange", linewidth=2, label=f"AUC = {auc:.3f}")
-    ax.plot([0, 1], [0, 1], color="gray", linestyle="--", linewidth=1)
-    ax.set_title("ROC Curve")
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.legend(loc="lower right")
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    print("\n" + "="*50)
+    print("FINAL SUMMARY")
+    print("="*50)
+    print(f"  Accuracy:  {acc:.2f}%")
+    print(f"  Precision: {prec:.2f}%")
+    print(f"  Recall:    {rec:.2f}%")
+    print(f"  F1-Score:  {f1:.2f}%")
+    print(f"  ROC-AUC:   {roc_auc:.4f}")
+    print(f"  Threshold: {tuned_threshold:.4f}")
+    print("="*50)
 
+    summary_path = Path('outputs/results') / summary_filename
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_payload = {
+        "model_path": str(model_path),
+        "dataset_root": str(dataset_root),
+        "batch_size": batch_size,
+        "tuning": {
+            "beta": beta,
+            "min_precision": min_precision,
+            "threshold": float(tuned_threshold),
+            "validation_fbeta": float(fbeta_score),
+            "validation_precision": float(tuned_precision),
+            "validation_recall": float(tuned_recall),
+        },
+        "test_metrics": {
+            "accuracy": float(acc / 100.0),
+            "precision": float(prec / 100.0),
+            "recall": float(rec / 100.0),
+            "f1": float(f1 / 100.0),
+            "roc_auc": float(roc_auc),
+            "roc_optimal_threshold": float(opt_threshold),
+        },
+        "confusion_matrix": {
+            "TP": int(((predictions == 1) & (labels == 1)).sum()),
+            "TN": int(((predictions == 0) & (labels == 0)).sum()),
+            "FP": int(((predictions == 1) & (labels == 0)).sum()),
+            "FN": int(((predictions == 0) & (labels == 1)).sum()),
+        },
+        "counts": {
+            "total": int(len(labels)),
+            "glaucoma_predicted": int(predictions.sum()),
+            "glaucoma_actual": int(labels.sum()),
+        },
+    }
+    summary_path.write_text(json.dumps(summary_payload, indent=2), encoding='utf-8')
+    print(f"💾 Tuned evaluation summary saved to {summary_path}")
 
-def main() -> None:
-    """Run the evaluation pipeline on the saved test split."""
-    result = evaluate_model()
-    metrics = result["metrics"]
-
-    print("Evaluation complete.")
-    print(f"Accuracy:  {metrics['accuracy']:.4f}")
-    print(f"Precision: {metrics['precision']:.4f}")
-    print(f"Recall:    {metrics['recall']:.4f}")
-    print(f"F1:        {metrics['f1']:.4f}")
-    print(f"AUC:       {metrics['auc']:.4f}")
-    print(f"Confusion matrix saved to: {result['confusion_matrix_path']}")
-    print(f"ROC curve saved to: {result['roc_curve_path']}")
+    return labels, predictions, probs, tuned_threshold
 
 
 if __name__ == "__main__":
-    main()
+    full_evaluation()

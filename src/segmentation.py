@@ -112,26 +112,55 @@ def segment_disc_and_cup(
         stage2_labels = np.zeros_like(disc_mask_refined)
     else:
         disc_intensities = disc_region[disc_mask_refined == 1]
+        disc_y, disc_x = np.where(disc_mask_refined > 0)
+        disc_center_x = float(np.mean(disc_x))
+        disc_center_y = float(np.mean(disc_y))
 
         kmin_val = float(np.min(disc_intensities))
         kmax_val = float(np.max(disc_intensities))
+        cup_threshold = float(np.percentile(disc_intensities, 65.0))
         print(f"  Disc region Kmin: {kmin_val:.4f}, Kmax: {kmax_val:.4f}")
+        print(f"  Cup threshold (65th percentile): {cup_threshold:.4f}")
+        print(f"  Disc centroid: ({disc_center_x:.1f}, {disc_center_y:.1f})")
 
-        all_disc_pixels = disc_region.flatten()
-        cup_labels = np.zeros(all_disc_pixels.shape, dtype=np.uint8)
-        disc_flat_mask = disc_mask_refined.flatten()
-
-        disc_pixel_vals = all_disc_pixels[disc_flat_mask == 1]
-        dist_to_kmin = np.abs(disc_pixel_vals - kmin_val)
-        dist_to_kmax = np.abs(disc_pixel_vals - kmax_val)
-        pixel_labels = np.where(dist_to_kmin <= dist_to_kmax, 0, 1)
-
-        cup_labels[disc_flat_mask == 1] = pixel_labels
-        cup_mask_raw = cup_labels.reshape(roi_image.shape)
+        cup_mask_raw = ((disc_region >= cup_threshold) & (disc_mask_refined == 1)).astype(np.uint8)
 
         cup_mask = cv2.morphologyEx(cup_mask_raw, cv2.MORPH_CLOSE, kernel)
         cup_mask = cv2.morphologyEx(cup_mask, cv2.MORPH_OPEN, kernel)
-        cup_mask = cv2.bitwise_and(cup_mask, disc_mask_refined)
+        cup_mask = (cup_mask.astype(np.uint8) * disc_mask_refined.astype(np.uint8)).astype(np.uint8)
+
+        # Keep the component closest to the disc center so the cup stays central.
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(cup_mask, connectivity=8)
+        if num_labels > 1:
+            disc_area = int(np.sum(disc_mask_refined))
+            best_label = 0
+            best_score = -1.0
+
+            for label in range(1, num_labels):
+                area = int(stats[label, cv2.CC_STAT_AREA])
+                if area < max(10, int(disc_area * 0.02)):
+                    continue
+
+                component_mask = labels == label
+                component_y, component_x = np.where(component_mask)
+                if component_x.size == 0:
+                    continue
+
+                centroid_x = float(np.mean(component_x))
+                centroid_y = float(np.mean(component_y))
+                center_distance = float(np.hypot(centroid_x - disc_center_x, centroid_y - disc_center_y))
+                compactness = area / max(1, stats[label, cv2.CC_STAT_WIDTH] * stats[label, cv2.CC_STAT_HEIGHT])
+                score = (area * compactness) / (1.0 + center_distance)
+
+                if score > best_score:
+                    best_score = score
+                    best_label = label
+
+            if best_label == 0:
+                best_label = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+
+            cup_mask = (labels == best_label).astype(np.uint8)
+
         stage2_labels = cup_mask
 
     print("\nSegmentation complete!")

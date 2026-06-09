@@ -20,11 +20,23 @@ import json
 from cdr import run_full_pipeline
 from evaluate import predict_single_image
 from preprocessing import find_first_image
+import config
+import logging
+from pathlib import Path
+
+# initialize logger
+LOG_FILE = config.LOGS_DIR / "pipeline.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(), logging.FileHandler(str(LOG_FILE))],
+)
+logger = logging.getLogger(__name__)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RESULTS_ROOT = PROJECT_ROOT / "outputs" / "results"
-MODELS_ROOT = PROJECT_ROOT / "outputs" / "models"
+RESULTS_ROOT = config.RESULTS_DIR
+MODELS_ROOT = config.MODELS_DIR
 
 
 def _combine_decisions(cdr_value: float, cnn_label: str, cnn_confidence: float) -> tuple[str, str, float]:
@@ -111,7 +123,7 @@ def _save_final_report(
     fig.tight_layout()
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"Saved final report to {output_path}")
+    logger.info(f"Saved final report to {output_path}")
     return output_path
 
 
@@ -122,22 +134,22 @@ def main() -> None:
     if sample_image is None:
         raise FileNotFoundError(f"No sample image found in {image_folder}")
 
-    print("Unified glaucoma pipeline")
-    print(f"Sample image: {sample_image}")
-    print("Stages 1-4: preprocessing -> ROI -> segmentation -> CDR")
+    logger.info("Unified glaucoma pipeline")
+    logger.info(f"Sample image: {sample_image}")
+    logger.info("Stages 1-4: preprocessing -> ROI -> segmentation -> CDR")
     pipeline_result = run_full_pipeline(str(sample_image), save_outputs=True)
 
     cnn_result = None
     model_path = MODELS_ROOT / "best_model.pth"
     if model_path.exists():
-        print("Stage 5-7: CNN inference and final decision")
+        logger.info("Stage 5-7: CNN inference and final decision")
         cnn_result = predict_single_image(sample_image, model_path)
-        print(f"CNN label: {cnn_result['label']}")
-        print(f"CNN confidence: {cnn_result['confidence_percent']:.2f}%")
+        logger.info(f"CNN label: {cnn_result['label']}")
+        logger.info(f"CNN confidence: {cnn_result['confidence_percent']:.2f}%")
         # persist per-image CNN outputs
         _save_cnn_outputs(sample_image, cnn_result)
     else:
-        print(f"CNN model not found at {model_path}; skipping CNN inference.")
+        logger.warning(f"CNN model not found at {model_path}; skipping CNN inference.")
 
     cdr_value = float(pipeline_result["cdr"])
     cdr_label = "Glaucoma" if cdr_value >= 0.6 else "Normal"
@@ -161,10 +173,10 @@ def main() -> None:
         final_confidence,
     )
 
-    print(f"Final label: {final_label}")
-    print(f"Final confidence: {final_confidence * 100.0:.2f}%")
-    print(f"Final note: {note}")
-    print(f"Result image: {output_path}")
+    logger.info(f"Final label: {final_label}")
+    logger.info(f"Final confidence: {final_confidence * 100.0:.2f}%")
+    logger.info(f"Final note: {note}")
+    logger.info(f"Result image: {output_path}")
 
 
 def _save_cnn_outputs(image_path: Path, cnn_result: dict) -> tuple[Path, Path]:
@@ -175,13 +187,32 @@ def _save_cnn_outputs(image_path: Path, cnn_result: dict) -> tuple[Path, Path]:
 
     with open(json_path, "w", encoding="utf-8") as fh:
         json.dump(cnn_result, fh, indent=2)
-    print(f"Saved JSON result to: {json_path}")
+    logger.info(f"Saved JSON result to: {json_path}")
 
     # Annotate and save image
     img = Image.open(image_path).convert("RGB")
     draw = ImageDraw.Draw(img)
+    # Try Times New Roman first, fall back to bundled font, then system default
     try:
-        font = ImageFont.truetype("arial.ttf", size=18)
+        # prefer Times New Roman candidates
+        font_paths = [
+            str(config.TIMES_TTF),
+            "Times New Roman.ttf",
+            "times.ttf",
+        ]
+        font = None
+        for p in font_paths:
+            try:
+                if p and Path(p).exists():
+                    font = ImageFont.truetype(str(p), size=18)
+                    break
+                else:
+                    font = ImageFont.truetype(p, size=18)
+                    break
+            except Exception:
+                continue
+        if font is None:
+            font = ImageFont.load_default()
     except Exception:
         font = ImageFont.load_default()
 
@@ -192,7 +223,7 @@ def _save_cnn_outputs(image_path: Path, cnn_result: dict) -> tuple[Path, Path]:
         y += 20
 
     img.save(annotated_path)
-    print(f"Saved annotated image to: {annotated_path}")
+    logger.info(f"Saved annotated image to: {annotated_path}")
     return json_path, annotated_path
 
 
@@ -210,15 +241,15 @@ def batch_inference(dataset_root: Path | None = None) -> None:
 
     image_paths = list(dataset_root.rglob("*.png")) + list(dataset_root.rglob("*.jpg")) + list(dataset_root.rglob("*.jpeg"))
     image_paths = [p for p in image_paths if p.is_file()]
-    print(f"Found {len(image_paths)} images under {dataset_root}")
+    logger.info(f"Found {len(image_paths)} images under {dataset_root}")
 
     for idx, img_path in enumerate(sorted(image_paths)):
-        print(f"[{idx+1}/{len(image_paths)}] Inferring: {img_path}")
+        logger.info(f"[{idx+1}/{len(image_paths)}] Inferring: {img_path}")
         try:
             res = predict_single_image(img_path, model_path)
             _save_cnn_outputs(img_path, res)
         except Exception as ex:
-            print(f"Failed on {img_path}: {ex}")
+            logger.exception(f"Failed on {img_path}: {ex}")
 
 
 if __name__ == "__main__":

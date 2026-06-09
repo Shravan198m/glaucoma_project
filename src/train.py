@@ -15,6 +15,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import logging
+import config
 
 from dataset import create_dataloaders
 from model import (
@@ -29,51 +31,84 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TRAINING CONFIGURATION — Tuned for REFUGE + CPU
+# TRAINING CONFIGURATION — Enhanced for better accuracy
 # ─────────────────────────────────────────────────────────────────────────────
 CONFIG = {
     'dataset_root': str(PROJECT_ROOT / 'dataset'),
     'batch_size': 8,              # Small = safe for CPU RAM
-    'num_epochs': 20,             # 20 epochs total
-    'phase1_epochs': 5,           # Epochs 1-5: frozen backbone
-    'phase2_epochs': 15,          # Epochs 6-20: fine-tuning layer4
-    'lr_phase1': 1e-3,            # Higher LR for new head (phase 1)
-    'lr_phase2': 1e-4,            # Lower LR for fine-tuning (phase 2)
+    'num_epochs': 40,             # Increased to 40 epochs total
+    'phase1_epochs': 8,           # Epochs 1-8: frozen backbone
+    'phase2_epochs': 32,          # Epochs 9-40: fine-tuning layer4
+    'lr_phase1': 5e-4,            # Slightly lower LR for stable start
+    'lr_phase2': 1e-4,            # Lower LR for fine-tuning
     'dropout': 0.5,
-    'early_stop_patience': 6,     # Stop if no improvement for 6 epochs
-    'save_path': str(PROJECT_ROOT / 'outputs' / 'models' / 'best_model.pth'),
-    'device': 'cpu',              # CPU training
+    'decision_threshold': 0.45,   # Recall-friendly threshold for metrics
+    'early_stop_patience': 10,    # Increased patience for longer training
+    'save_path': str(config.MODELS_DIR / 'best_model.pth'),
+    # device will default to config helper (can be overridden via env)
+    'device': config.get_default_device(),
 }
+
+# configure logging to file + console
+LOG_FILE = config.LOGS_DIR / "run.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(), logging.FileHandler(str(LOG_FILE))],
+)
+logger = logging.getLogger(__name__)
+
+
+def predict_from_outputs(outputs, threshold):
+    """Convert model probabilities to binary predictions using a threshold."""
+    return (outputs >= threshold).float()
 
 
 # ── LOSS FUNCTION ─────────────────────────────────────────────────────────────
+class FocalLoss(nn.Module):
+    """Focal Loss for binary classification (works with probability outputs).
+
+    This implementation expects model outputs already passed through Sigmoid
+    (probabilities). It mirrors the focal loss formula by weighting BCE.
+    """
+
+    def __init__(self, alpha: float = 0.25, gamma: float = 2.0, reduction: str = 'mean'):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        # inputs: probabilities in [0,1]
+        bce = F.binary_cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-bce)
+        focal_term = (1 - pt) ** self.gamma
+        loss = self.alpha * focal_term * bce
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        return loss
+
+
 def get_loss_function(class_weights):
+    """Return the focal loss configured using class_weights when available.
+
+    If class_weights is provided, derive alpha from the glaucoma class weight
+    (index 1). Otherwise fallback to alpha=0.25.
     """
-    Binary Cross-Entropy Loss with class-aware sample weighting.
+    try:
+        cw = class_weights.float()
+        alpha = float(cw[1].item()) if cw.numel() > 1 else 0.25
+    except Exception:
+        alpha = 0.25
 
-    The current model head ends with Sigmoid, so binary cross-entropy is the
-    correct companion loss here. We apply the dataset class weights per sample
-    so the minority class has a stronger contribution to the objective.
-    """
-    class_weights = class_weights.float()
-    normal_weight = class_weights[0].item()
-    glaucoma_weight = class_weights[1].item()
-    print(f"  Loss weight (normal):   {normal_weight:.4f}")
-    print(f"  Loss weight (glaucoma): {glaucoma_weight:.4f}")
-
-    def criterion(outputs, labels):
-        sample_weights = torch.where(
-            labels >= 0.5,
-            torch.as_tensor(glaucoma_weight, device=outputs.device, dtype=outputs.dtype),
-            torch.as_tensor(normal_weight, device=outputs.device, dtype=outputs.dtype),
-        )
-        return F.binary_cross_entropy(outputs, labels, weight=sample_weights)
-
-    return criterion
+    logger.info(f"Loss: using FocalLoss(alpha={alpha:.4f}, gamma=2.0)")
+    return FocalLoss(alpha=alpha, gamma=2.0)
 
 
 # ── TRAINING ONE EPOCH ───────────────────────────────────────────────────────
-def train_one_epoch(model, loader, criterion, optimizer, device, epoch):
+def train_one_epoch(model, loader, criterion, optimizer, device, epoch, threshold):
     """Run one complete training epoch."""
     model.train()
 
@@ -94,12 +129,12 @@ def train_one_epoch(model, loader, criterion, optimizer, device, epoch):
         optimizer.step()
 
         running_loss += loss.item()
-        predicted = (outputs >= 0.5).float()
+        predicted = predict_from_outputs(outputs, threshold)
         correct += (predicted == labels).sum().item()
         total += labels.size(0)
 
         if (batch_idx + 1) % 10 == 0:
-            print(f"    Batch [{batch_idx + 1}/{batch_count}] Loss: {loss.item():.4f}")
+            logger.info(f"    Batch [{batch_idx + 1}/{batch_count}] Loss: {loss.item():.4f}")
 
     epoch_loss = running_loss / batch_count
     epoch_acc = 100.0 * correct / total
@@ -108,7 +143,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, epoch):
 
 
 # ── VALIDATION ONE EPOCH ─────────────────────────────────────────────────────
-def validate_one_epoch(model, loader, criterion, device):
+def validate_one_epoch(model, loader, criterion, device, threshold):
     """Evaluate model on validation set."""
     model.eval()
 
@@ -125,7 +160,7 @@ def validate_one_epoch(model, loader, criterion, device):
             loss = criterion(outputs, labels)
 
             running_loss += loss.item()
-            predicted = (outputs >= 0.5).float()
+            predicted = predict_from_outputs(outputs, threshold)
             correct += (predicted == labels).sum().item()
             total += labels.size(0)
 
@@ -169,13 +204,14 @@ class EarlyStopping:
 # ── MAIN TRAINING FUNCTION ────────────────────────────────────────────────────
 def train_model():
     """Complete training pipeline with two phases."""
-    print("\n" + "=" * 60)
-    print("GLAUCOMA DETECTION — TRAINING PIPELINE")
-    print("=" * 60)
-    print(f"Device: {CONFIG['device'].upper()}")
-    print(f"Total epochs: {CONFIG['num_epochs']}")
-    print(f"Batch size: {CONFIG['batch_size']}")
-    print("=" * 60)
+    logger.info("%s", "=" * 60)
+    logger.info("GLAUCOMA DETECTION — TRAINING PIPELINE")
+    logger.info("%s", "=" * 60)
+    logger.info(f"Device: {CONFIG['device'].upper()}")
+    logger.info(f"Total epochs: {CONFIG['num_epochs']}")
+    logger.info(f"Batch size: {CONFIG['batch_size']}")
+    logger.info(f"Decision threshold: {CONFIG['decision_threshold']:.2f}")
+    logger.info("%s", "=" * 60)
 
     device = torch.device(CONFIG['device'])
 
@@ -202,9 +238,9 @@ def train_model():
         save_path=CONFIG['save_path'],
     )
 
-    print("\n" + "─" * 60)
-    print("PHASE 1: Training classification head only (Epochs 1-5)")
-    print("─" * 60)
+    logger.info("%s", "-" * 60)
+    logger.info("PHASE 1: Training classification head only (Epochs 1-5)")
+    logger.info("%s", "-" * 60)
 
     freeze_all_except_head(model)
     print_model_summary(model)
@@ -228,11 +264,21 @@ def train_model():
         print(f"  Learning rate: {optimizer.param_groups[0]['lr']:.6f}")
 
         train_loss, train_acc = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, epoch
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            epoch,
+            CONFIG['decision_threshold'],
         )
 
         val_loss, val_acc = validate_one_epoch(
-            model, val_loader, criterion, device
+            model,
+            val_loader,
+            criterion,
+            device,
+            CONFIG['decision_threshold'],
         )
 
         elapsed = time.time() - start_time
@@ -243,23 +289,20 @@ def train_model():
         history['val_acc'].append(val_acc)
         history['lr'].append(optimizer.param_groups[0]['lr'])
 
-        print("\n  ┌─────────────────────────────────────────┐")
-        print(f"  │ Epoch {epoch:2d} Summary                        │")
-        print(f"  │ Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%  │")
-        print(f"  │ Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc:.2f}%  │")
-        print(f"  │ Time: {elapsed:.1f}s                              │")
-        print("  └─────────────────────────────────────────┘")
+        logger.info(
+            f"Epoch {epoch} Summary — Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}% | Time: {elapsed:.1f}s"
+        )
 
         scheduler.step(val_loss)
         early_stopping(val_loss, model)
 
         if early_stopping.stop:
-            print("Early stopping in Phase 1.")
+            logger.info("Early stopping in Phase 1.")
             break
 
-    print("\n" + "─" * 60)
-    print("PHASE 2: Fine-tuning layer4 + head (Epochs 6-20)")
-    print("─" * 60)
+    logger.info("%s", "-" * 60)
+    logger.info("PHASE 2: Fine-tuning layer4 + head (Epochs 6-20)")
+    logger.info("%s", "-" * 60)
 
     unfreeze_layer4_and_head(model)
     print_model_summary(model)
@@ -290,11 +333,21 @@ def train_model():
         print(f"  Learning rate: {optimizer.param_groups[0]['lr']:.6f}")
 
         train_loss, train_acc = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, epoch
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            epoch,
+            CONFIG['decision_threshold'],
         )
 
         val_loss, val_acc = validate_one_epoch(
-            model, val_loader, criterion, device
+            model,
+            val_loader,
+            criterion,
+            device,
+            CONFIG['decision_threshold'],
         )
 
         elapsed = time.time() - start_time
@@ -305,24 +358,21 @@ def train_model():
         history['val_acc'].append(val_acc)
         history['lr'].append(optimizer.param_groups[0]['lr'])
 
-        print("\n  ┌─────────────────────────────────────────┐")
-        print(f"  │ Epoch {epoch:2d} Summary                        │")
-        print(f"  │ Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%  │")
-        print(f"  │ Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc:.2f}%  │")
-        print(f"  │ Time: {elapsed:.1f}s                              │")
-        print("  └─────────────────────────────────────────┘")
+        logger.info(
+            f"Epoch {epoch} Summary — Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}% | Time: {elapsed:.1f}s"
+        )
 
         scheduler.step(val_loss)
         early_stopping(val_loss, model)
 
         if early_stopping.stop:
-            print("Early stopping triggered. Training complete.")
+            logger.info("Early stopping triggered. Training complete.")
             break
 
     plot_training_history(history)
 
-    print("\n✅ Training complete!")
-    print(f"Best model saved at: {CONFIG['save_path']}")
+    logger.info("Training complete ✅")
+    logger.info(f"Best model saved at: {CONFIG['save_path']}")
 
     return model, history, test_loader, class_weights
 
@@ -355,10 +405,12 @@ def plot_training_history(history):
     plt.suptitle('Training History', fontsize=15, fontweight='bold')
     plt.tight_layout()
 
-    os.makedirs('outputs/plots', exist_ok=True)
-    plt.savefig('outputs/plots/training_history.png', dpi=150, bbox_inches='tight')
+    # Use centralized plots directory from config
+    config.PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = config.PLOTS_DIR / 'training_history.png'
+    plt.savefig(str(out_path), dpi=150, bbox_inches='tight')
     plt.show()
-    print('📊 Training history saved to outputs/plots/training_history.png')
+    logger.info(f'📊 Training history saved to {out_path}')
 
 
 def main():
