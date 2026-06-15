@@ -85,7 +85,7 @@ def segment_disc_and_cup(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Two-stage K-Strange segmentation to extract optic disc and optic cup."""
     print("\n" + "=" * 50)
-    print("ENHANCED K-STRANGE SEGMENTATION")
+    print("Enhanced K-Strange Segmentation")
     print("=" * 50)
 
     print("\n[STAGE 1] Separating Optic Disc from Background...")
@@ -176,19 +176,20 @@ def visualize_segmentation(
     cup_mask: np.ndarray,
     save_path: Path | str | None = None,
 ) -> None:
-    """Visualize the segmentation results and optionally save the figure."""
-    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    """Visualize the segmentation results in a spaced 2×2 grid."""
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    axes = axes.flatten()
 
     axes[0].imshow(roi_image, cmap="gray")
-    axes[0].set_title("Original ROI\n(Optic Disc Region)", fontweight="bold")
+    axes[0].set_title("Original ROI\n(Optic Disc Region)", fontweight="bold", pad=10)
     axes[0].axis("off")
 
     axes[1].imshow(disc_mask, cmap="gray")
-    axes[1].set_title("Stage 1 Output\n(Optic Disc Mask)", fontweight="bold")
+    axes[1].set_title("Stage 1 — Disc Mask\n(Enhanced K-Strange)", fontweight="bold", pad=10)
     axes[1].axis("off")
 
     axes[2].imshow(cup_mask, cmap="gray")
-    axes[2].set_title("Stage 2 Output\n(Optic Cup Mask)", fontweight="bold")
+    axes[2].set_title("Stage 2 — Cup Mask", fontweight="bold", pad=10)
     axes[2].axis("off")
 
     overlay = np.zeros((*roi_image.shape, 3), dtype=np.float32)
@@ -208,15 +209,15 @@ def visualize_segmentation(
 
     overlay = np.clip(overlay, 0, 1)
     axes[3].imshow(overlay)
-    axes[3].set_title("Overlay\n(Green=Disc, Yellow=Cup)", fontweight="bold")
+    axes[3].set_title("Overlay\n(Green=Disc, Yellow=Cup)", fontweight="bold", pad=10)
     axes[3].axis("off")
 
-    plt.suptitle("Enhanced K-Strange Segmentation Results", fontsize=14, fontweight="bold")
-    plt.tight_layout()
+    plt.suptitle("Enhanced K-Strange Segmentation Results", fontsize=14, fontweight="bold", y=0.98)
+    plt.subplots_adjust(hspace=0.35, wspace=0.25)
     if save_path is not None:
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.savefig(save_path, dpi=80, bbox_inches="tight")
         print(f"Saved segmentation figure to {save_path}")
     if plt.get_backend().lower() != "agg":
         plt.show()
@@ -429,7 +430,7 @@ def main() -> None:
     roi, _, _ = detect_optic_disc_roi(results["normalized"])
     print(f"  ROI shape: {roi.shape}")
 
-    print("\nStage 3 - K-Strange Segmentation")
+    print("\nStage 3 - Enhanced K-Strange Segmentation")
     disc_mask, cup_mask, _, _ = segment_disc_and_cup(roi)
 
     print("\nStage 4 - Segmentation Outputs")

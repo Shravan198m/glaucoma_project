@@ -35,13 +35,13 @@ def create_resnet50_model(num_classes=1, dropout_rate=0.5):
 
     print("Loading pretrained ResNet-50...")
     model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
-    print("✅ Pretrained weights loaded!")
+    print("[OK] Pretrained weights loaded!")
 
     # Freeze all layers initially.
     for param in model.parameters():
         param.requires_grad = False
 
-    print("🔒 All layers frozen")
+    print("[LOCKED] All layers frozen")
 
     num_features = model.fc.in_features
 
@@ -54,7 +54,7 @@ def create_resnet50_model(num_classes=1, dropout_rate=0.5):
         nn.Sigmoid(),
     )
 
-    print("✅ New classification head added: 2048 → 512 → 1")
+    print("[OK] New classification head added: 2048 -> 512 -> 1")
     print(f"   Dropout rates: {dropout_rate} (first), 0.3 (second)")
 
     return model
@@ -73,7 +73,7 @@ def freeze_all_except_head(model):
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
-    print("🔒 Phase 1: Frozen backbone")
+    print("[LOCKED] Phase 1: Frozen backbone")
     print(f"   Trainable params: {trainable:,} / {total:,} ({100 * trainable / total:.1f}%)")
 
 
@@ -96,7 +96,7 @@ def unfreeze_layer4_and_head(model):
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
-    print("🔓 Phase 2: layer4 + FC unfrozen")
+    print("[UNLOCKED] Phase 2: layer4 + FC unfrozen")
     print(f"   Trainable params: {trainable:,} / {total:,} ({100 * trainable / total:.1f}%)")
 
 
@@ -120,7 +120,7 @@ def print_model_summary(model):
         if layer:
             params = sum(p.numel() for p in layer.parameters())
             trainable = sum(p.numel() for p in layer.parameters() if p.requires_grad)
-            status = "🔓 TRAINABLE" if trainable > 0 else "🔒 FROZEN"
+            status = "[UNLOCKED] TRAINABLE" if trainable > 0 else "[LOCKED] FROZEN"
             print(f"  {name:10s}: {params:>10,} params  {status}")
     print("=" * 55)
 
@@ -146,4 +146,4 @@ if __name__ == "__main__":
     print(f"  Output shape: {output.shape}")
     print(f"  Output values: {output.detach().numpy().flatten()}")
     print("  (Values should be between 0 and 1)")
-    print("\n✅ Model created successfully!")
+    print("\n[OK] Model created successfully!")

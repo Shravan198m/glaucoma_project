@@ -144,42 +144,36 @@ def display_cdr_report(
     details: Dict[str, float | int],
     save_path: str | None = None,
 ) -> Dict[str, str]:
-    """Display a complete CDR report with visualization and optional saving."""
+    """Display a complete CDR report with spaced layout."""
     interpretation = interpret_cdr(cdr)
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig = plt.figure(figsize=(14, 11))
+    gs = fig.add_gridspec(2, 2, hspace=0.4, wspace=0.35)
 
-    # Build overlay image
     overlay = np.stack([roi_image] * 3, axis=-1)
-
     disc_coords = np.where(disc_mask > 0)
     cup_coords = np.where(cup_mask > 0)
-
-    # Disc in green
     overlay[disc_coords[0], disc_coords[1], 0] = 0.0
     overlay[disc_coords[0], disc_coords[1], 1] = 0.8
     overlay[disc_coords[0], disc_coords[1], 2] = 0.0
-
-    # Cup in yellow
     overlay[cup_coords[0], cup_coords[1], 0] = 1.0
     overlay[cup_coords[0], cup_coords[1], 1] = 1.0
     overlay[cup_coords[0], cup_coords[1], 2] = 0.0
 
-    axes[0].imshow(np.clip(overlay, 0, 1))
-    axes[0].set_title("Segmentation Overlay\n(Green=Disc, Yellow=Cup)", fontweight="bold")
-    axes[0].axis("off")
+    ax0 = fig.add_subplot(gs[0, :])
+    ax0.imshow(np.clip(overlay, 0, 1))
+    ax0.set_title("Segmentation Overlay (Green=Disc, Yellow=Cup)", fontweight="bold", pad=10)
+    ax0.axis("off")
 
-    # CDR bar chart
-    categories = ["Disc Diameter\n(vertical)", "Cup Diameter\n(vertical)"]
+    ax1 = fig.add_subplot(gs[1, 0])
+    categories = ["Disc\n(vertical)", "Cup\n(vertical)"]
     values = [details["disc_vertical_diameter"], details["cup_vertical_diameter"]]
-    colors = ["#2ecc71", "#f39c12"]
-
-    bars = axes[1].bar(categories, values, color=colors, width=0.5, edgecolor="black")
-    axes[1].set_ylabel("Pixels", fontsize=11)
-    axes[1].set_title(f'CDR Measurement\nVertical CDR = {cdr:.3f}', fontweight="bold")
-
+    bar_colors = ["#2ecc71", "#f39c12"]
+    bars = ax1.bar(categories, values, color=bar_colors, width=0.45, edgecolor="black")
+    ax1.set_ylabel("Pixels", fontsize=11)
+    ax1.set_title(f"CDR Measurement\nVertical CDR = {cdr:.3f}", fontweight="bold", pad=10)
     for bar, val in zip(bars, values):
-        axes[1].text(
+        ax1.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + 1,
             str(val),
@@ -187,41 +181,39 @@ def display_cdr_report(
             fontweight="bold",
         )
 
-    # CDR gauge / report
-    axes[2].axis("off")
+    ax2 = fig.add_subplot(gs[1, 1])
+    ax2.axis("off")
     report_text = (
         f"CDR REPORT\n"
-        f"{'─'*35}\n\n"
-        f"Vertical CDR:     {cdr:.3f}\n"
-        f"Area CDR:         {details['area_cdr']:.3f}\n\n"
-        f"Disc Diameter:    {details['disc_vertical_diameter']} px\n"
-        f"Cup Diameter:     {details['cup_vertical_diameter']} px\n\n"
-        f"Disc Area:        {details['disc_area_pixels']} px²\n"
-        f"Cup Area:         {details['cup_area_pixels']} px²\n\n"
-        f"{'─'*35}\n\n"
+        f"{'─'*30}\n\n"
+        f"Vertical CDR:  {cdr:.3f}\n"
+        f"Area CDR:      {details['area_cdr']:.3f}\n\n"
+        f"Disc Diameter: {details['disc_vertical_diameter']} px\n"
+        f"Cup Diameter:  {details['cup_vertical_diameter']} px\n\n"
+        f"Disc Area:     {details['disc_area_pixels']} px²\n"
+        f"Cup Area:      {details['cup_area_pixels']} px²\n\n"
+        f"{'─'*30}\n\n"
         f"Status: {interpretation['status']}\n\n"
         f"Risk: {interpretation['risk_level']}\n\n"
         f"Recommendation:\n{interpretation['recommendation']}"
     )
-
     color = interpretation["color"]
-    axes[2].text(
+    ax2.text(
         0.05,
         0.95,
         report_text,
-        transform=axes[2].transAxes,
+        transform=ax2.transAxes,
         fontsize=10,
         verticalalignment="top",
         fontfamily="monospace",
         bbox=dict(boxstyle="round", facecolor="lightyellow", edgecolor=color, linewidth=2),
     )
 
-    plt.suptitle("Cup-to-Disc Ratio Analysis", fontsize=14, fontweight="bold")
-    plt.tight_layout()
+    plt.suptitle("Cup-to-Disc Ratio Analysis", fontsize=14, fontweight="bold", y=0.98)
     if save_path is not None:
         save_path_obj = Path(save_path)
         save_path_obj.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path_obj, dpi=150, bbox_inches="tight")
+        plt.savefig(save_path_obj, dpi=80, bbox_inches="tight")
         print(f"Saved CDR report to {save_path_obj}")
     if plt.get_backend().lower() != "agg":
         plt.show()
@@ -286,7 +278,7 @@ def run_full_pipeline(image_path: str, save_outputs: bool = True) -> Dict[str, o
     print(f"  ROI center: {center}")
     print(f"  ROI bbox: {bbox}")
 
-    print("\nStage 3 - K-Strange Segmentation")
+    print("\nStage 3 - Enhanced K-Strange Segmentation")
     disc_mask, cup_mask, _, _ = segment_disc_and_cup(roi)
 
     print("\nStage 4 - CDR Calculation")

@@ -1,0 +1,60 @@
+2026-06-09 19:10:29,632 [INFO] ============================================================
+2026-06-09 19:10:29,634 [INFO] GLAUCOMA DETECTION — TRAINING PIPELINE
+2026-06-09 19:10:29,635 [INFO] ============================================================
+2026-06-09 19:10:29,635 [INFO] Device: CPU
+2026-06-09 19:10:29,636 [INFO] Total epochs: 20
+2026-06-09 19:10:29,636 [INFO] Batch size: 8
+2026-06-09 19:10:29,636 [INFO] Decision threshold: 0.45
+2026-06-09 19:10:29,636 [INFO] ============================================================
+2026-06-09 19:10:31,558 [INFO] Loss: using FocalLoss(alpha=1.3318, gamma=2.0)
+2026-06-09 19:10:31,560 [INFO] ────────────────────────────────────────────────────────────
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Program Files\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+  File "C:\Program Files\Python312\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 31-90: character maps to <undefined>
+Call stack:
+  File "C:\Users\svmoo\OneDrive\Documents\GLUCOMA\glaucoma_project\src\train.py", line 431, in <module>
+    main()
+  File "C:\Users\svmoo\OneDrive\Documents\GLUCOMA\glaucoma_project\src\train.py", line 427, in main
+    train_model()
+  File "C:\Users\svmoo\OneDrive\Documents\GLUCOMA\glaucoma_project\src\train.py", line 241, in train_model
+    logger.info("%s", "─" * 60)
+Message: '%s'
+Arguments: ('────────────────────────────────────────────────────────────',)
+2026-06-09 19:10:31,623 [INFO] PHASE 1: Training classification head only (Epochs 1-5)
+2026-06-09 19:10:31,624 [INFO] ────────────────────────────────────────────────────────────
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Program Files\Python312\Lib\logging\__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+  File "C:\Program Files\Python312\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 31-90: character maps to <undefined>
+Call stack:
+  File "C:\Users\svmoo\OneDrive\Documents\GLUCOMA\glaucoma_project\src\train.py", line 431, in <module>
+    main()
+  File "C:\Users\svmoo\OneDrive\Documents\GLUCOMA\glaucoma_project\src\train.py", line 427, in main
+    train_model()
+  File "C:\Users\svmoo\OneDrive\Documents\GLUCOMA\glaucoma_project\src\train.py", line 243, in train_model
+    logger.info("%s", "─" * 60)
+Message: '%s'
+Arguments: ('────────────────────────────────────────────────────────────',)
+2026-06-09 19:10:49,052 [INFO]     Batch [10/788] Loss: 0.1446
+2026-06-09 19:11:17,407 [INFO]     Batch [20/788] Loss: 0.3307
+2026-06-09 19:11:40,313 [INFO]     Batch [30/788] Loss: 0.2434
+2026-06-09 19:12:01,596 [INFO]     Batch [40/788] Loss: 0.2561
+2026-06-09 19:13:04,148 [INFO]     Batch [50/788] Loss: 0.1540
+2026-06-09 19:13:42,145 [INFO]     Batch [60/788] Loss: 0.3689
+2026-06-09 19:14:17,316 [INFO]     Batch [70/788] Loss: 0.2071
+2026-06-09 19:14:40,904 [INFO]     Batch [80/788] Loss: 0.1525
+2026-06-09 19:15:00,994 [INFO]     Batch [90/788] Loss: 0.2335
+2026-06-09 19:15:31,138 [INFO]     Batch [100/788] Loss: 0.1312
+2026-06-09 19:15:56,902 [INFO]     Batch [110/788] Loss: 0.2151
+2026-06-09 19:16:25,966 [INFO]     Batch [120/788] Loss: 0.1347
+2026-06-09 19:16:56,678 [INFO]     Batch [130/788] Loss: 0.2522
+2026-06-09 19:17:15,854 [INFO]     Batch [140/788] Loss: 0.1599

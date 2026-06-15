@@ -92,7 +92,7 @@ def predict_single_image(
     print(f"      CNN: {cnn_prediction} (confidence: {confidence_pct:.1f}%)")
 
     # Final decision (combining CDR + CNN).
-    final_diagnosis = combine_decisions(cdr, cnn_prediction)
+    final_diagnosis = combine_decisions(cdr, cnn_prediction, probability)
 
     # Display/save results.
     display_final_output(
@@ -131,15 +131,11 @@ def predict_single_image(
     }
 
 
-def combine_decisions(cdr: float, cnn_prediction: str) -> Dict[str, str]:
-    """Combine CDR and CNN outputs into one final diagnosis.
-
-    Decision logic:
-    - If both CDR and CNN agree: high-confidence result
-    - If they disagree: manual review recommended
-    """
+def combine_decisions(cdr: float, cnn_prediction: str, cnn_probability: float = 0.0) -> Dict[str, str]:
+    """Combine CDR and CNN outputs into one final diagnosis with clinical rules."""
     cdr_positive = cdr >= 0.6
 
+    # 1. High agreement: both positive
     if cdr_positive and cnn_prediction == "GLAUCOMA":
         return {
             "label": "GLAUCOMA - HIGH RISK",
@@ -147,6 +143,8 @@ def combine_decisions(cdr: float, cnn_prediction: str) -> Dict[str, str]:
             "recommendation": "Immediate specialist consultation required.",
             "color": "red",
         }
+    
+    # 2. High agreement: both negative
     if (not cdr_positive) and cnn_prediction == "NORMAL":
         return {
             "label": "NORMAL",
@@ -155,6 +153,26 @@ def combine_decisions(cdr: float, cnn_prediction: str) -> Dict[str, str]:
             "color": "green",
         }
 
+    # 3. Clinical tolerance rules for minor disagreements (reduce false-positive borderline cases)
+    # Case A: CDR is slightly elevated (0.6 <= CDR < 0.65) but CNN is confident it is NORMAL (probability < 0.35)
+    if cnn_prediction == "NORMAL" and (0.6 <= cdr < 0.65) and (cnn_probability < 0.35):
+        return {
+            "label": "NORMAL",
+            "confidence": "MEDIUM",
+            "recommendation": "Routine ophthalmological checkup (annual). Minor structural variation noted.",
+            "color": "green",
+        }
+
+    # Case B: CDR is normal (CDR < 0.6) but CNN predicts GLAUCOMA with very low confidence (probability < 0.55)
+    if cnn_prediction == "GLAUCOMA" and (cdr < 0.6) and (cnn_probability < 0.55):
+        return {
+            "label": "NORMAL",
+            "confidence": "MEDIUM",
+            "recommendation": "Routine ophthalmological checkup (annual).",
+            "color": "green",
+        }
+
+    # Default disagreement case: Borderline
     return {
         "label": "BORDERLINE - MANUAL REVIEW NEEDED",
         "confidence": "LOW",

@@ -74,59 +74,48 @@ def preprocess_image(
 def visualize_preprocessing(
     results: Dict[str, np.ndarray], save_path: Optional[str] = None
 ) -> None:
-    """Display preprocessing stages side by side and optionally save a figure."""
-    fig, axes = plt.subplots(1, 5, figsize=(20, 4))
+    """Display preprocessing stages in a spaced 2-row layout."""
+    fig = plt.figure(figsize=(16, 9))
+    gs = fig.add_gridspec(2, 3, hspace=0.45, wspace=0.35)
 
-    # ── Build a proper GREEN image for display ──────────────────
-    green_channel = results['green_channel']  # 2D array (H, W)
-
-    # Create an RGB image where only the Green channel has data
-    # Red=0, Green=actual data, Blue=0  → appears GREEN on screen
+    green_channel = results["green_channel"]
     h, w = green_channel.shape
     green_display = np.zeros((h, w, 3), dtype=np.uint8)
-    green_display[:, :, 1] = green_channel   # Only fill G channel
+    green_display[:, :, 1] = green_channel
 
-    # ── Build GREEN versions of other stages too ─────────────────
     def to_green_rgb(gray_image):
-        """Convert any grayscale image to green-tinted RGB display"""
         if gray_image.dtype != np.uint8:
-            # Normalize to 0-255 first
             img = (gray_image * 255).astype(np.uint8)
         else:
             img = gray_image
-        h, w = img.shape
-        rgb = np.zeros((h, w, 3), dtype=np.uint8)
-        rgb[:, :, 1] = img  # Only green channel
+        gh, gw = img.shape
+        rgb = np.zeros((gh, gw, 3), dtype=np.uint8)
+        rgb[:, :, 1] = img
         return rgb
 
-    titles = [
-        "Original RGB",
-        "Green Channel",
-        "CLAHE Enhanced",
-        "Gaussian Filtered",
-        "Normalized",
-    ]
-    images = [
-        results["original_rgb"],                    # Normal RGB
-        green_display,                              # Pure green
-        to_green_rgb(results["clahe_enhanced"]),    # Green tint
-        to_green_rgb(results["gaussian_filtered"]), # Green tint
-        to_green_rgb(results["normalized"]),        # Green tint
+    stages = [
+        ("Original RGB", results["original_rgb"]),
+        ("Green Channel", green_display),
+        ("CLAHE Enhanced", to_green_rgb(results["clahe_enhanced"])),
+        ("Gaussian Filtered", to_green_rgb(results["gaussian_filtered"])),
+        ("Normalized", to_green_rgb(results["normalized"])),
     ]
 
-    for ax, title, img in zip(axes, titles, images):
-        ax.imshow(img)  # No cmap='gray' here!
-        ax.set_title(title, fontsize=10, fontweight="bold")
+    positions = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1)]
+    for (row, col), (title, img) in zip(positions, stages):
+        ax = fig.add_subplot(gs[row, col])
+        ax.imshow(img)
+        ax.set_title(title, fontsize=11, fontweight="bold", pad=8)
         ax.axis("off")
-        ax.set_xlabel(f"Range: [{img.min():.3f}, {img.max():.3f}]", fontsize=8)
 
-    plt.suptitle("Preprocessing Pipeline", fontsize=14, fontweight="bold")
-    plt.tight_layout()
+    fig.add_subplot(gs[1, 2]).axis("off")
+
+    plt.suptitle("Preprocessing Pipeline", fontsize=14, fontweight="bold", y=0.98)
 
     if save_path:
         save_path_obj = Path(save_path)
         save_path_obj.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path_obj, dpi=150, bbox_inches="tight")
+        plt.savefig(save_path_obj, dpi=80, bbox_inches="tight")
         print(f"Saved to {save_path_obj}")
 
     if plt.get_backend().lower() != "agg":

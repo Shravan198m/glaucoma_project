@@ -1,9 +1,10 @@
 # Automated Glaucoma Detection System
 ## A Hybrid Deep Learning and Computer Vision Approach
 
-**Project Status:** ✅ OPTIMIZED & VALIDATED  
-**Latest Update:** May 3, 2026  
-**Performance:** 81.84% Accuracy | 89.24% Specificity | 69.53% Sensitivity
+**Project Status:** ✅ FULL-STACK INTEGRATION COMPLETE  
+**Latest Update:** June 12, 2026  
+**Performance:** 89.28% Test Accuracy | 93.02% Specificity | 83.07% Sensitivity  
+**Live app:** React frontend + FastAPI backend — run `..\start.ps1` from repo root
 
 ---
 
@@ -20,12 +21,14 @@ This project presents a comprehensive automated computer-aided diagnostic (CAD) 
 
 | Metric | Value |
 |--------|-------|
-| **Test Accuracy** | 81.84% |
-| **Precision** | 79.53% |
-| **Recall (Sensitivity)** | 69.53% |
-| **Specificity** | 89.24% |
-| **F1-Score** | 0.742 |
-| **High-Confidence Predictions (≥75%)** | 5,032/9,005 (55.9%) |
+| **Test Accuracy** | 89.28% |
+| **Precision** | 87.73% |
+| **Recall (Sensitivity)** | 83.07% |
+| **Specificity** | 93.02% |
+| **F1-Score** | 0.853 |
+| **ROC-AUC** | 0.961 |
+| **High-Confidence Predictions (≥75%)** | *Requires re-aggregation with updated model* |
+| **Recent Validation Accuracy** | >90.44% (achieved in latest training run) |
 
 ---
 
@@ -132,21 +135,57 @@ Note: The training code now implements `FocalLoss` in `src/train.py` and uses it
 
 ---
 
+## 🌐 Full-Stack Integration (June 2026)
+
+The project now ships with a **React frontend** (`../glaucoma-app/`) connected to this FastAPI backend.
+
+### One-command start (from `GLUCOMA/` root)
+
+```powershell
+.\start.ps1
+```
+
+Opens API (:8000) + frontend (:5173) + browser automatically.
+
+### End-to-end flow
+
+```
+Upload fundus image → FastAPI /predict → prediction_service.py
+  → preprocessing → K-Strange segmentation → CDR → ResNet-50
+  → pdf_service.py → JSON + PDF URL → Results dashboard
+```
+
+### Key integration modules
+
+| Module | Purpose |
+|--------|---------|
+| `src/api.py` | Canonical FastAPI backend |
+| `src/prediction_service.py` | Inference orchestration (single source of truth) |
+| `src/pdf_service.py` | Per-patient medical PDF reports |
+
+See **[../MASTER_GUIDE.md](../MASTER_GUIDE.md)** (complete project map), `../README.md`, `API_INSTRUCTIONS.md`, and `../ARCHITECTURE.md` for full details.
+
+---
+
 ## 📁 Project Structure
 
 ```
 glaucoma_project/
 ├── src/
+│   ├── api.py                    # ⭐ FastAPI — canonical backend
+│   ├── prediction_service.py     # ⭐ Inference orchestration
+│   ├── pdf_service.py            # ⭐ Medical PDF reports
 │   ├── preprocessing.py          # Image preprocessing pipeline
 │   ├── segmentation.py           # K-Strange segmentation
 │   ├── cdr.py                    # CDR calculation
 │   ├── model.py                  # ResNet-50 factory
 │   ├── train.py                  # Original training
-│   ├── train_optimized.py        # ⭐ NEW: Optimized training
+│   ├── train_optimized.py        # Optimized training
 │   ├── evaluate.py               # Inference & metrics
 │   ├── dataset.py                # PyTorch DataLoader
-│   ├── pipeline.py               # End-to-end runner
+│   ├── pipeline.py               # End-to-end CLI runner
 │   ├── inference.py              # Single-image inference
+│   ├── predict.py                # Prediction pipeline
 │   └── aggregate_results.py      # Batch result aggregation
 ├── notebooks/
 │   ├── 01_preprocessing.ipynb
@@ -230,6 +269,46 @@ python src/inference.py        # Test CNN inference
 python src/aggregate_results.py # Aggregate batch results
 ```
 
+### 6. API Server (REST Interface)
+```bash
+# Start the API server (auto-loads latest model)
+python -m uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
+```
+Or use the provided scripts:
+- **Windows:** Double-click `run_api.bat`
+- **PowerShell:** Right-click `run_api.ps1` → "Run with PowerShell"
+
+**API Endpoints:**
+- **POST** `/predict` - Upload fundus image (`file` field) — full analysis + PDF
+- **GET** `/reports/{report_id}.pdf` - Download generated PDF report
+- **GET** `/health` - Check server and model status
+- **GET** `/docs` - Interactive Swagger UI documentation
+- **GET** `/redoc` - Alternative API documentation
+
+**Example Usage:**
+```bash
+curl -X POST "http://localhost:8000/predict" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@path/to/fundus_image.jpg"
+```
+
+**Returns JSON with:**
+- Prediction, confidence score, cup-to-disc ratio, risk level
+- Base64 segmentation images and heatmap
+- Clinical recommendations
+- PDF report URL (`/reports/{report_id}.pdf`)
+
+**Frontend:** `../glaucoma-app/` (React) — connects to this API on port 8000.  
+**One-start:** `../start.ps1` from repo root launches API + frontend together.
+
+See `API_INSTRUCTIONS.md` and `../README.md` for complete documentation.
+
+### Integration tests
+
+```bash
+python -m pytest tests/test_api_integration.py -v
+```
+
 ### Generate Reports
 
 #### Comprehensive 50-Page Report
@@ -304,10 +383,17 @@ Modified for Glaucoma Detection:
 - F1-Score: ~0.70
 
 ### After Optimization ✨
-- **Accuracy: 81.84%** (+1.84 to +3.84%)
-- **Recall: 69.53%** (+4-6%)
-- **F1-Score: 0.742** (+0.042)
-- Specificity: 89.24% (maintained)
+- **Test Accuracy: 89.28%** (+10.28 to +11.28%)
+- **Precision: 87.73%** (+8.20%)
+- **Recall (Sensitivity): 83.07%** (+18.07 to +20.07%)
+- **F1-Score: 0.853** (+0.153)
+- **Specificity: 93.02%** (+3.78%)
+- **ROC-AUC: 0.961** (Excellent discrimination)
+
+### Recent Training Improvements (June 2026)
+- Achieved **over 90.44% validation accuracy** (epochs 26 and 28)
+- Validation loss as low as 0.0801
+- Demonstrated stable convergence with improved generalization
 
 ### Optimization Impact
 
@@ -463,7 +549,7 @@ Contains:
 
 **Project Lead:** Advanced Medical Imaging Laboratory  
 **Status:** ✅ Optimized & Validated  
-**Last Updated:** May 3, 2026
+**Last Updated:** June 11, 2026
 
 ---
 
@@ -477,7 +563,7 @@ If using this system in research, please cite:
          A Hybrid Deep Learning and Computer Vision Approach},
   author={Research Team},
   year={2026},
-  month={May},
+  month={June},
   institution={Advanced Medical Imaging Laboratory}
 }
 ```
@@ -493,6 +579,7 @@ If using this system in research, please cite:
 | **Training Results** | `./outputs/training_results/optimized_training_results.json` |
 | **Training Plots** | `./outputs/plots/training_history_optimized.png` |
 | **Best Model** | `./outputs/models/best_model_optimized.pth` |
+| **Recent Best Model (June 2026)** | `./outputs/models/best_model.pth` |
 | **Source Code** | `./src/` |
 
 ---
@@ -523,4 +610,4 @@ For understanding the technical concepts:
 
 ---
 
-**Generated:** May 3, 2026 | **Status:** ✅ COMPLETE & OPTIMIZED | **Version:** 2.0
+**Generated:** June 11, 2026 | **Status:** ✅ COMPLETE & OPTIMIZED | **Version:** 2.1

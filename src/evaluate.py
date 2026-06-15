@@ -144,113 +144,105 @@ def print_metrics(labels, predictions, probs):
 
 
 def plot_confusion_matrix(labels, predictions):
-    """
-    Plot confusion matrix.
-
-    READING THE CONFUSION MATRIX:
-    ┌─────────────────────────────────┐
-    │           Predicted             │
-    │         Normal | Glaucoma       │
-    │ Actual ─────────────────────    │
-    │ Normal │  TN   │  FP  │         │
-    │ Glaucoma│  FN  │  TP  │         │
-    └─────────────────────────────────┘
-
-    TN = True Negative  (correctly said Normal)   ✅
-    TP = True Positive  (correctly said Glaucoma) ✅
-    FP = False Positive (said Glaucoma, was Normal)  ← False alarm
-    FN = False Negative (said Normal, was Glaucoma)  ← DANGEROUS! missed case
-    """
     cm = confusion_matrix(labels, predictions)
 
-    plt.figure(figsize=(8, 6))
-    plt.imshow(cm, interpolation='nearest', cmap='Blues')
-    plt.colorbar()
+    fig, ax = plt.subplots(figsize=(8, 6), facecolor="#0A2540")
+    ax.set_facecolor("#0A2540")
+
+    # Custom color map from Navy to Cyan
+    from matplotlib.colors import LinearSegmentedColormap
+    cmap = LinearSegmentedColormap.from_list("navy_cyan", ["#0A2540", "#0F2D4D", "#11335A", "#00C2FF"], N=256)
+
+    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.ax.yaxis.set_tick_params(color='white')
+    plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='white')
 
     tick_marks = np.arange(len(CLASS_NAMES))
-    plt.xticks(tick_marks, CLASS_NAMES)
-    plt.yticks(tick_marks, CLASS_NAMES)
-    plt.title('Confusion Matrix', fontsize=14, fontweight='bold', pad=15)
-    plt.ylabel('Actual Label', fontsize=12)
-    plt.xlabel('Predicted Label', fontsize=12)
+    ax.set_xticks(tick_marks)
+    ax.set_xticklabels(CLASS_NAMES, color='white', fontsize=11, fontweight='bold')
+    ax.set_yticks(tick_marks)
+    ax.set_yticklabels(CLASS_NAMES, color='white', fontsize=11, fontweight='bold')
+
+    ax.set_ylabel('Actual Label', fontsize=12, color='#B8C4D4', fontweight='bold')
+    ax.set_xlabel('Predicted Label', fontsize=12, color='#B8C4D4', fontweight='bold')
+
+    for spine in ax.spines.values():
+        spine.set_color((1.0, 1.0, 1.0, 0.08))
+
 
     threshold = cm.max() / 2.0 if cm.size else 0
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
-            plt.text(
+            ax.text(
                 j,
                 i,
                 format(cm[i, j], 'd'),
                 ha='center',
                 va='center',
-                color='white' if cm[i, j] > threshold else 'black',
-                fontsize=16,
+                color='white' if cm[i, j] > threshold else '#B8C4D4',
+                fontsize=18,
                 fontweight='bold',
             )
 
-    # Add TN/FP/FN/TP labels
     tn, fp, fn, tp = cm.ravel()
-    plt.text(0.25, 0.85, f'TN={tn}', ha='center',
-             transform=plt.gca().transAxes, color='green', fontsize=11)
-    plt.text(0.75, 0.85, f'FP={fp}', ha='center',
-             transform=plt.gca().transAxes, color='orange', fontsize=11)
-    plt.text(0.25, 0.15, f'FN={fn}', ha='center',
-             transform=plt.gca().transAxes, color='red', fontsize=11)
-    plt.text(0.75, 0.15, f'TP={tp}', ha='center',
-             transform=plt.gca().transAxes, color='green', fontsize=11)
+    ax.text(0.25, 0.85, f'TN={tn}', ha='center',
+             transform=ax.transAxes, color='#10B981', fontsize=12, fontweight='bold')
+    ax.text(0.75, 0.85, f'FP={fp}', ha='center',
+             transform=ax.transAxes, color='#F59E0B', fontsize=12, fontweight='bold')
+    ax.text(0.25, 0.15, f'FN={fn}', ha='center',
+             transform=ax.transAxes, color='#EF4444', fontsize=12, fontweight='bold')
+    ax.text(0.75, 0.15, f'TP={tp}', ha='center',
+             transform=ax.transAxes, color='#10B981', fontsize=12, fontweight='bold')
 
     plt.tight_layout()
     os.makedirs('outputs/plots', exist_ok=True)
     plt.savefig('outputs/plots/confusion_matrix.png',
-                dpi=150, bbox_inches='tight')
+                dpi=150, bbox_inches='tight', facecolor="#0A2540")
     plt.close()
     print("📊 Confusion matrix saved!")
 
 
 def plot_roc_curve(labels, probs):
-    """
-    Plot ROC (Receiver Operating Characteristic) curve.
-
-    WHY ROC CURVE IS CRITICAL FOR MEDICAL PROJECTS:
-    - Shows trade-off between catching true positives vs false alarms
-    - AUC (Area Under Curve): closer to 1.0 = better
-    - AUC = 0.5: random guessing (useless)
-    - AUC > 0.9: excellent for medical screening
-    - Lets clinicians choose threshold based on their risk tolerance
-    """
     fpr, tpr, thresholds = roc_curve(labels, probs)
     roc_auc = auc(fpr, tpr)
 
-    # Find optimal threshold (Youden's Index: max(TPR - FPR))
     optimal_idx       = np.argmax(tpr - fpr)
     optimal_threshold = thresholds[optimal_idx]
     optimal_fpr       = fpr[optimal_idx]
     optimal_tpr       = tpr[optimal_idx]
 
-    plt.figure(figsize=(8, 7))
-    plt.plot(fpr, tpr, 'b-', linewidth=2.5,
+    fig, ax = plt.subplots(figsize=(8, 7), facecolor="#0A2540")
+    ax.set_facecolor("#0A2540")
+
+    ax.plot(fpr, tpr, color="#00C2FF", linewidth=3.0,
              label=f'ROC Curve (AUC = {roc_auc:.4f})')
-    plt.plot([0, 1], [0, 1], 'r--',
-             linewidth=1.5, label='Random Classifier (AUC=0.5)')
+    ax.plot([0, 1], [0, 1], color="white", linestyle="--",
+             linewidth=1.5, alpha=0.5, label='Random Classifier (AUC=0.5)')
 
-    # Mark optimal threshold point
-    plt.scatter(optimal_fpr, optimal_tpr, s=150,
-                color='green', zorder=5,
+    ax.scatter(optimal_fpr, optimal_tpr, s=180,
+                color='#10B981', edgecolor='white', linewidth=2, zorder=5,
                 label=f'Optimal Threshold = {optimal_threshold:.3f}\n'
-                      f'(TPR={optimal_tpr:.3f}, FPR={optimal_fpr:.3f})')
+                      f'(Sensitivity={optimal_tpr:.3f}, Spec.={1-optimal_fpr:.3f})')
 
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate (1 - Specificity)', fontsize=12)
-    plt.ylabel('True Positive Rate (Sensitivity / Recall)', fontsize=12)
-    plt.title(f'ROC Curve — Glaucoma Detection\nAUC = {roc_auc:.4f}',
-              fontsize=14, fontweight='bold')
-    plt.legend(loc='lower right', fontsize=10)
-    plt.grid(True, alpha=0.3)
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.set_xlabel('False Positive Rate (1 - Specificity)', fontsize=12, color='#B8C4D4', fontweight='bold')
+    ax.set_ylabel('True Positive Rate (Sensitivity / Recall)', fontsize=12, color='#B8C4D4', fontweight='bold')
+
+    ax.grid(True, color='white', alpha=0.06, linestyle=':', linewidth=1)
+    ax.tick_params(colors='white')
+
+    for spine in ax.spines.values():
+        spine.set_color((1.0, 1.0, 1.0, 0.08))
+
+    legend = ax.legend(loc='lower right', fontsize=11, facecolor='#0F2D4D', edgecolor=(1.0, 1.0, 1.0, 0.08))
+
+    plt.setp(legend.get_texts(), color='white')
 
     plt.tight_layout()
     plt.savefig('outputs/plots/roc_curve.png',
-                dpi=150, bbox_inches='tight')
+                dpi=150, bbox_inches='tight', facecolor="#0A2540")
     plt.close()
     print(f"📊 ROC Curve saved! AUC = {roc_auc:.4f}")
     print(f"   Optimal threshold: {optimal_threshold:.4f}")
@@ -351,4 +343,5 @@ def full_evaluation(model_path='outputs/models/best_model.pth', dataset_root='da
 
 
 if __name__ == "__main__":
-    full_evaluation()
+    full_evaluation(beta=1.0, min_precision=0.85, summary_filename='tuned_balanced_summary.json')
+

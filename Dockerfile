@@ -1,22 +1,19 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+WORKDIR /app/glaucoma_project
 
-WORKDIR /app
-
-# Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    git \
-    libgl1-mesa-glx \
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project
-COPY . /app
+COPY glaucoma_project/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Python deps
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+COPY glaucoma_project/ .
 
-CMD ["python", "src/pipeline.py"]
+ENV GLAUCOMA_DEVICE=cpu
+ENV PORT=8000
+
+EXPOSE 8000
+
+CMD ["python", "-m", "uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]
