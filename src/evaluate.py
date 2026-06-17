@@ -258,7 +258,7 @@ def full_evaluation(model_path='outputs/models/best_model.pth', dataset_root='da
     # Load best model
     print(f"Loading model from {model_path}...")
     model = create_resnet50_model()
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
     model = model.to(device)
     print("✅ Model loaded!")
 

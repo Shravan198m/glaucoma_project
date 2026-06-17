@@ -43,7 +43,7 @@ def _predict_single_image(image_path: Path, model_path: Path, threshold: float =
     
     device = torch.device('cpu')
     model = create_resnet50_model()
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
     model = model.to(device)
     model.eval()
     

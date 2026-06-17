@@ -160,7 +160,7 @@ class PredictionService:
 
         self.device = torch.device(device or get_default_device())
         self.model = create_resnet50_model()
-        self.model.load_state_dict(torch.load(str(self.model_path), map_location=self.device))
+        self.model.load_state_dict(torch.load(str(self.model_path), map_location=self.device, weights_only=False))
         self.model.to(self.device)
         self.model.eval()
 

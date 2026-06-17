@@ -12,9 +12,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Download the model weights from Google Drive
-RUN mkdir -p outputs/models && \
-    curl -L -o outputs/models/best_model.pth "https://drive.google.com/uc?export=download&id=1fIjbsob9aomFU2zKNg3vCNwH_IWdLjW4"
+# Download the model weights from Google Drive using gdown to bypass the virus scan warning screen
+RUN pip install --no-cache-dir gdown && \
+    mkdir -p outputs/models && \
+    gdown --id 1fIjbsob9aomFU2zKNg3vCNwH_IWdLjW4 -O outputs/models/best_model.pth
 
 ENV GLAUCOMA_DEVICE=cpu
 ENV PORT=8000
