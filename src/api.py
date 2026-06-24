@@ -417,6 +417,51 @@ def _generate_panels_and_pdf_task(
             meta_path.write_text(json.dumps(meta), encoding="utf-8")
 
 
+def validate_fundus_image(image_bgr: np.ndarray) -> tuple[bool, str]:
+    """Validate if the BGR image is a retinal fundus photograph."""
+    import cv2
+    if image_bgr is None or image_bgr.size == 0:
+        return False, "Empty or invalid image data."
+
+    h, w, c = image_bgr.shape
+    if c != 3:
+        return False, "Image must be a color photograph (3 channels)."
+
+    # Downsample image for fast color analysis (100x100 is extremely fast and sufficient)
+    small = cv2.resize(image_bgr, (100, 100))
+
+    # Split into B, G, R channels
+    b, g, r = small[:, :, 0].astype(np.float32), small[:, :, 1].astype(np.float32), small[:, :, 2].astype(np.float32)
+
+    r_mean = float(np.mean(r))
+    g_mean = float(np.mean(g))
+    b_mean = float(np.mean(b))
+
+    # 1. Check for completely black or extremely dark images
+    if r_mean < 5.0 and g_mean < 5.0 and b_mean < 5.0:
+        return False, "Invalid image: The uploaded photograph is too dark or completely black."
+
+    # 2. Check for completely white or overexposed images
+    if r_mean > 245.0 and g_mean > 245.0 and b_mean > 245.0:
+        return False, "Invalid image: The uploaded photograph is overexposed or completely white."
+
+    # 3. Grayscale / low saturation check (e.g., document scans, receipts, text, grayscale scans)
+    color_diff = float(np.mean(np.abs(r - g) + np.abs(g - b) + np.abs(r - b)))
+    if color_diff < 12.0:
+        return False, "Invalid image: The uploaded file lacks color saturation and appears to be a document, receipt, or grayscale scan. Please upload a clear color fundus photograph."
+
+    # 4. Red-to-Blue ratio check (fundus images are highly dominated by red/orange hues)
+    red_blue_ratio = r_mean / (b_mean + 1e-5)
+    if red_blue_ratio < 1.5:
+        return False, "Invalid image: The uploaded photograph color profile does not match a retinal fundus image (lacks red/orange dominance). Please upload a valid color fundus photograph."
+
+    # 5. Red-to-Green ratio check (red must be brighter than green in fundus photography)
+    if r_mean < g_mean:
+        return False, "Invalid image: The uploaded photograph color profile does not match a retinal fundus image (green channel is brighter than red). Please upload a valid color fundus photograph."
+
+    return True, "Valid fundus image."
+
+
 @app.post("/predict", response_model=PredictionResult)
 async def predict_glaucoma(
     request: Request,
@@ -448,6 +493,16 @@ async def predict_glaucoma(
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(image_data)
             temp_path = Path(tmp.name)
+
+        # Validate that the image is a valid retinal fundus photograph
+        import cv2
+        img_bgr = cv2.imread(str(temp_path))
+        if img_bgr is None:
+            raise HTTPException(status_code=400, detail="Uploaded file is not a valid image or is corrupted.")
+
+        is_valid, msg = validate_fundus_image(img_bgr)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=msg)
 
         result_dir = RESULTS_DIR / job_id
         result = get_service().predict(temp_path, output_dir=result_dir, patient=patient, generate_panels=False)
