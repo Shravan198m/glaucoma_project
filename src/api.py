@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import json
+import numpy as np
 import os
 import sys
 import tempfile
@@ -423,9 +424,10 @@ def validate_fundus_image(image_bgr: np.ndarray) -> tuple[bool, str]:
     if image_bgr is None or image_bgr.size == 0:
         return False, "Empty or invalid image data."
 
+    if len(image_bgr.shape) != 3 or image_bgr.shape[2] != 3:
+        return False, "Invalid image: The uploaded file is a grayscale scan or lacks color channels. Please upload a clear color fundus photograph."
+
     h, w, c = image_bgr.shape
-    if c != 3:
-        return False, "Image must be a color photograph (3 channels)."
 
     # Downsample image for fast color analysis (100x100 is extremely fast and sufficient)
     small = cv2.resize(image_bgr, (100, 100))

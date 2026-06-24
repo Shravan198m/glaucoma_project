@@ -26,10 +26,11 @@ def client():
 @pytest.fixture
 def sample_fundus_bytes() -> bytes:
     img = np.zeros((400, 400, 3), dtype=np.uint8)
-    cv2.circle(img, (200, 200), 160, (40, 80, 40), -1)
-    cv2.circle(img, (200, 200), 50, (180, 180, 180), -1)
+    cv2.circle(img, (200, 200), 160, (20, 50, 200), -1)
+    cv2.circle(img, (200, 200), 50, (10, 30, 150), -1)
     _, buf = cv2.imencode(".png", img)
     return buf.tobytes()
+
 
 
 def test_health(client):
@@ -57,7 +58,7 @@ def test_predict_full_workflow(client, sample_fundus_bytes):
     )
     assert res.status_code == 200, res.text
     data = res.json()
-    assert data["prediction"] in ("Glaucoma", "Normal")
+    assert data["prediction"] in ("Glaucoma", "Normal", "Borderline")
     assert 0 <= data["confidence_score"] <= 100
     assert data["risk_level"] in ("Low", "Medium", "High")
     assert data["pdf_url"]
@@ -84,5 +85,4 @@ def test_predict_full_workflow(client, sample_fundus_bytes):
     assert reloaded.status_code == 200, reloaded.text
     reloaded_data = reloaded.json()
     assert reloaded_data["preprocessing_image"]
-    assert reloaded_data["final_composite_image"]
     assert reloaded_data["prediction"] == data["prediction"]

@@ -353,8 +353,35 @@ def test_dataset_config_invalid_splits() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# VALIDATOR TESTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_validate_fundus_image_grayscale() -> None:
+    """Test that grayscale/2D images are rejected safely."""
+    from api import validate_fundus_image
+    
+    # Grayscale image (2D)
+    img_gray = np.zeros((100, 100), dtype=np.uint8)
+    is_valid, msg = validate_fundus_image(img_gray)
+    assert not is_valid
+    assert "grayscale" in msg.lower() or "channels" in msg.lower()
+
+
+def test_validate_fundus_image_invalid_channels() -> None:
+    """Test that images with wrong channel count are rejected."""
+    from api import validate_fundus_image
+    
+    # 4 channels
+    img_4ch = np.zeros((100, 100, 4), dtype=np.uint8)
+    is_valid, msg = validate_fundus_image(img_4ch)
+    assert not is_valid
+    assert "channels" in msg.lower()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # RUN TESTS
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
+
