@@ -22,13 +22,13 @@ ENV HOME=/home/user \
 COPY --chown=user:user requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Copy the rest of the application
-COPY --chown=user:user . .
-
-# Download model weights and install gdown
+# Download model weights first (cached, so we don't hit Google Drive limits on code updates)
 RUN pip install --no-cache-dir --user gdown && \
     mkdir -p outputs/models && \
     gdown 1fIjbsob9aomFU2zKNg3vCNwH_IWdLjW4 -O outputs/models/best_model.pth
+
+# Copy the rest of the application (changes here won't invalidate the model download cache!)
+COPY --chown=user:user . .
 
 ENV GLAUCOMA_DEVICE=cpu
 
