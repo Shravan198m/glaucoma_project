@@ -458,6 +458,8 @@ async def predict_glaucoma(
         background_tasks.add_task(_generate_panels_and_pdf_task, result, pipeline_data, pdf_path, result_dir)
 
         base_url = str(request.base_url).rstrip("/")
+        if "localhost" not in base_url and "127.0.0.1" not in base_url:
+            base_url = base_url.replace("http://", "https://")
         api_payload = _build_api_response(result, base_url, job_id)
         api_payload["pdf_status"] = "generating"
         _save_result_metadata(result_dir, api_payload)
@@ -492,6 +494,8 @@ async def get_result_file(job_id: str, filename: str) -> FileResponse:
 async def get_result(job_id: str, request: Request) -> PredictionResult:
     """Load a previous analysis with all pipeline images from disk."""
     base_url = str(request.base_url).rstrip("/")
+    if "localhost" not in base_url and "127.0.0.1" not in base_url:
+        base_url = base_url.replace("http://", "https://")
     return PredictionResult(**_load_result_from_disk(job_id, base_url))
 
 
