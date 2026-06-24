@@ -353,29 +353,8 @@ def generate_all_panels(
         "preprocessing_image": render_preprocessing_panel(prep),
         "segmentation_panel_image": render_segmentation_panel(roi, disc_mask, cup_fixed),
         "cdr_report_image": render_cdr_panel(roi, disc_mask, cup_fixed, cdr, cdr_details),
-        "pipeline_summary_image": render_pipeline_summary(
-            prep["original_rgb"],
-            roi,
-            disc_mask,
-            cup_fixed,
-            cdr,
-            cdr_status,
-            cnn_label,
-            cnn_confidence,
-            final_label,
-            final_confidence,
-            final_note,
-        ),
-        "final_composite_image": render_final_composite(
-            prep,
-            roi,
-            disc_mask,
-            cup_fixed,
-            cdr,
-            cnn_pred_upper,
-            cnn_confidence,
-            final_diagnosis,
-        ),
+        "pipeline_summary_image": None,  # Disabled: Unused in frontend/PDF, extremely heavy to render
+        "final_composite_image": None,   # Disabled: Unused in frontend/PDF, extremely heavy to render
         "resnet_result_image": render_resnet_panel(
             prep["original_rgb"],
             cnn_label,
