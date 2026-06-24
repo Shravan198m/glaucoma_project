@@ -1,3 +1,12 @@
+---
+title: Glaucoma Backend
+emoji: 👁️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+---
+
 # Automated Glaucoma Detection System
 ## A Hybrid Deep Learning and Computer Vision Approach
 
