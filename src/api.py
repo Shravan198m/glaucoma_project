@@ -449,16 +449,16 @@ def validate_fundus_image(image_bgr: np.ndarray) -> tuple[bool, str]:
 
     # 3. Grayscale / low saturation check (e.g., document scans, receipts, text, grayscale scans)
     color_diff = float(np.mean(np.abs(r - g) + np.abs(g - b) + np.abs(r - b)))
-    if color_diff < 12.0:
+    if color_diff < 8.0:
         return False, "Invalid image: The uploaded file lacks color saturation and appears to be a document, receipt, or grayscale scan. Please upload a clear color fundus photograph."
 
     # 4. Red-to-Blue ratio check (fundus images are highly dominated by red/orange hues)
     red_blue_ratio = r_mean / (b_mean + 1e-5)
-    if red_blue_ratio < 1.5:
+    if red_blue_ratio < 1.2:
         return False, "Invalid image: The uploaded photograph color profile does not match a retinal fundus image (lacks red/orange dominance). Please upload a valid color fundus photograph."
 
     # 5. Red-to-Green ratio check (red must be brighter than green in fundus photography)
-    if r_mean < g_mean:
+    if r_mean * 1.1 < g_mean:
         return False, "Invalid image: The uploaded photograph color profile does not match a retinal fundus image (green channel is brighter than red). Please upload a valid color fundus photograph."
 
     return True, "Valid fundus image."
