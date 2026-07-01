@@ -1363,7 +1363,7 @@ if __name__ == '__main__':
     print('Generating comprehensive Glaucoma Detection System report...')
     doc = generate_report()
     
-    output_path = Path('C:/Users/svmoo/OneDrive/Documents/GLUCOMA/glaucoma_project/GLAUCOMA_PROJECT_COMPREHENSIVE_REPORT.docx')
+    output_path = Path('C:/Users/svmoo/OneDrive/Documents/GLAUCOMA/glaucoma_project/GLAUCOMA_PROJECT_COMPREHENSIVE_REPORT.docx')
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     doc.save(str(output_path))

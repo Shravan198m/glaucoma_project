@@ -1,10 +1,10 @@
-﻿from pathlib import Path
+from pathlib import Path
 import csv
 import sys
 import cv2
 import numpy as np
 
-project = Path(r"c:/Users/svmoo/OneDrive/Documents/GLUCOMA/glaucoma_project")
+project = Path(r"c:/Users/svmoo/OneDrive/Documents/GLAUCOMA/glaucoma_project")
 sys.path.insert(0, str(project / "src"))
 from preprocessing import preprocess_image
 

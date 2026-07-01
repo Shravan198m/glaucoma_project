@@ -633,7 +633,7 @@ if __name__ == '__main__':
     print('Generating IEEE-format technical report...')
     doc = generate_ieee_report()
     
-    output_path = Path('C:/Users/svmoo/OneDrive/Documents/GLUCOMA/glaucoma_project/IEEE_GLAUCOMA_DETECTION_TECHNICAL_REPORT.docx')
+    output_path = Path('C:/Users/svmoo/OneDrive/Documents/GLAUCOMA/glaucoma_project/IEEE_GLAUCOMA_DETECTION_TECHNICAL_REPORT.docx')
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     doc.save(str(output_path))

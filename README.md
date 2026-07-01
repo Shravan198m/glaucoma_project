@@ -148,7 +148,7 @@ Note: The training code now implements `FocalLoss` in `src/train.py` and uses it
 
 The project now ships with a **React frontend** (`../glaucoma-app/`) connected to this FastAPI backend.
 
-### One-command start (from `GLUCOMA/` root)
+### One-command start (from `GLAUCOMA/` root)
 
 ```powershell
 .\start.ps1

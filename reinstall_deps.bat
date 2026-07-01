@@ -15,7 +15,7 @@ echo.
 pause
 echo.
 echo Step 1: Removing incomplete virtual environment...
-cd /d "C:\Users\svmoo\OneDrive\Documents\GLUCOMA\glaucoma_project"
+cd /d "C:\Users\svmoo\OneDrive\Documents\GLAUCOMA\glaucoma_project"
 rmdir /s /q venv
 if %errorlevel% neq 0 (
     echo Warning: Could not remove venv (might not exist or be in use)
